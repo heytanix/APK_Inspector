@@ -184,19 +184,37 @@ class APKScanner:
                 })
 
     def scan_ssl_security(self) -> None:
-        ssl_classes = [
-            "Ljavax/net/ssl/TrustManager",
-            "Ljavax/net/ssl/X509TrustManager",
-        ]
+        """
+        Scans the APK for potential SSL/TLS misconfigurations or use of insecure HTTP protocols.
+        """
+        for method in self.analysis.get_methods():
+            method_name = method.get_name()
+            method_code = method.get_source()
 
-        for class_name in ssl_classes:
-            found = self.analysis.find_classes(class_name)
-            if found:
-                self.vulnerabilities.append({
-                    "type": "SSL Security",
-                    "details": "Custom SSL implementation detected - potential certificate validation bypass",
-                    "severity": "Critical",
-                })
+            if method_code and ("HttpURLConnection" in method_code or "SSLSocket" in method_code):
+                if "setHostnameVerifier" in method_code and "ALLOW_ALL_HOSTNAME_VERIFIER" in method_code:
+                    self.vulnerabilities.append({
+                        "type": "SSL Misconfiguration",
+                        "details": f"Insecure Hostname Verifier detected in method {method_name}.",
+                        "severity": "High",
+                        "recommendation": "Avoid using 'ALLOW_ALL_HOSTNAME_VERIFIER' and implement proper hostname verification.",
+                    })
+
+                if "setDefaultSSLSocketFactory" in method_code and "TrustAllCertificates" in method_code:
+                    self.vulnerabilities.append({
+                        "type": "SSL Misconfiguration",
+                        "details": f"Insecure SSL socket configuration in method {method_name}.",
+                        "severity": "High",
+                        "recommendation": "Do not disable SSL certificate validation; use a properly configured trust manager.",
+                    })
+
+                if "http://" in method_code:
+                    self.vulnerabilities.append({
+                        "type": "Insecure Communication",
+                        "details": f"Insecure HTTP protocol detected in method {method_name}.",
+                        "severity": "Medium",
+                        "recommendation": "Use HTTPS to ensure secure communication.",
+                    })
 
     def run_scan(self) -> Dict[str, Any]:
         print(f"Scanning APK: {self.apk_path}")
